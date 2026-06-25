@@ -3,21 +3,18 @@ import {
   AVATARS,
   CLASSIC_CITY_SEEDS,
   CLASSIC_NEWER_POINTS,
-  GAME_MODES,
+  GAME_INTRO,
   MAPILLARY_ACCESS_TOKEN,
   MIN_TIME_DRIFT_GAP,
   ROLES,
-  SEED_LOCATIONS,
   TOTAL_ROUNDS,
 } from './constants';
 import type {
   ClassicStep,
-  GameModeKey,
   MapillaryImage,
   MapillaryResponse,
   PhotoSlot,
   RoundScore,
-  StreetImage,
   TimeDriftPair,
 } from './types';
 import {
@@ -27,7 +24,6 @@ import {
   imageYear,
   scoreFromDistance,
   scoreFromGap,
-  scoreFromYear,
   shuffle,
   thumbUrl,
 } from './utils';
@@ -41,12 +37,10 @@ interface ImageCluster {
   items: MapillaryImage[];
 }
 
-export class WorldGuesserApp {
+export class SolarlensApp {
   private accessToken = MAPILLARY_ACCESS_TOKEN;
-  private currentMode: GameModeKey = 'classic';
   private currentRound = 0;
   private totalScore = 0;
-  private currentImage: StreetImage | null = null;
   private currentPair: TimeDriftPair | null = null;
   private classicStep: ClassicStep = 1;
   private newerCorrect = false;
@@ -62,13 +56,8 @@ export class WorldGuesserApp {
   private step2Done = false;
 
   init(): void {
-    this.renderModeCards();
-    this.applyModeUI();
-    el<HTMLSpanElement>('year-display').textContent = el<HTMLInputElement>('year-slider').value;
+    el<HTMLDivElement>('mode-copy').textContent = GAME_INTRO;
     el<HTMLSpanElement>('gap-display').textContent = el<HTMLInputElement>('gap-slider').value;
-    el<HTMLInputElement>('year-slider').addEventListener('input', (e) => {
-      el<HTMLSpanElement>('year-display').textContent = (e.target as HTMLInputElement).value;
-    });
     el<HTMLInputElement>('gap-slider').addEventListener('input', (e) => {
       el<HTMLSpanElement>('gap-display').textContent = (e.target as HTMLInputElement).value;
     });
@@ -93,12 +82,81 @@ export class WorldGuesserApp {
     });
   }
 
-  private isClassic(): boolean {
-    return this.currentMode === 'classic';
-  }
-
   private newerSlot(): PhotoSlot {
     return this.currentPair!.newerIsA ? 'A' : 'B';
+  }
+
+  private olderSlot(): PhotoSlot {
+    return this.newerSlot() === 'A' ? 'B' : 'A';
+  }
+
+  private imageForSlot(slot: PhotoSlot) {
+    return slot === 'A' ? this.currentPair!.imageA : this.currentPair!.imageB;
+  }
+
+  private applyPhotoRoleLabels(): void {
+    if (!this.currentPair || !this.step1Done) return;
+
+    const newer = this.newerSlot();
+
+    (['A', 'B'] as PhotoSlot[]).forEach((slot) => {
+      const key = slot.toLowerCase();
+      const btn = el<HTMLButtonElement>(`photo-pick-${key}`);
+      const badge = el<HTMLSpanElement>(`badge-${key}`);
+      const isNewer = slot === newer;
+
+      btn.classList.remove('is-newer', 'is-older', 'revealed-newer', 'revealed-older');
+      badge.classList.remove('newer', 'older');
+
+      if (isNewer) {
+        btn.classList.add('is-newer', 'revealed-newer');
+        badge.classList.add('newer');
+        badge.textContent = this.step2Done
+          ? `Newer · ${this.imageForSlot(slot).year}`
+          : 'Newer';
+      } else {
+        btn.classList.add('is-older', 'revealed-older');
+        badge.classList.add('older');
+        badge.textContent = this.step2Done
+          ? `Older · ${this.imageForSlot(slot).year}`
+          : 'Older';
+      }
+    });
+
+    this.updatePhotoReminder();
+  }
+
+  private updatePhotoReminder(): void {
+    const reminder = el<HTMLDivElement>('photo-role-reminder');
+    if (!this.step1Done || !this.currentPair) {
+      reminder.hidden = true;
+      return;
+    }
+
+    const newer = this.newerSlot();
+    const older = this.olderSlot();
+    const showYears = this.step2Done;
+    const newerYear = this.imageForSlot(newer).year;
+    const olderYear = this.imageForSlot(older).year;
+
+    reminder.hidden = false;
+
+    if (this.classicStep === 2) {
+      reminder.className = 'photo-role-reminder step-2';
+      reminder.innerHTML =
+        `<span class="reminder-chip older">${showYears ? `Older · ${olderYear}` : 'Older'}</span>` +
+        `<span class="reminder-arrow">→</span>` +
+        `<span class="reminder-chip newer">${showYears ? `Newer · ${newerYear}` : 'Newer'}</span>` +
+        `<span class="reminder-note">Labels stay on the photos above</span>`;
+    } else if (this.classicStep === 3) {
+      reminder.className = 'photo-role-reminder step-3';
+      const newerLabel = showYears ? `Newer · ${newerYear}` : 'Newer';
+      reminder.innerHTML =
+        `<span class="reminder-pin" aria-hidden="true"></span>` +
+        `<span>Pin the <strong>newer</strong> photo on the map — look for the green <strong>${newerLabel}</strong> badge</span>`;
+    } else {
+      reminder.hidden = true;
+    }
   }
 
   private updateModalState(): void {
@@ -111,32 +169,6 @@ export class WorldGuesserApp {
   private showScreen(id: string): void {
     document.querySelectorAll('.screen').forEach((s) => s.classList.remove('active'));
     el<HTMLElement>(id).classList.add('active');
-  }
-
-  private renderModeCards(): void {
-    const wrap = el<HTMLDivElement>('mode-grid');
-    wrap.innerHTML = '';
-    (Object.entries(GAME_MODES) as [GameModeKey, (typeof GAME_MODES)[GameModeKey]][]).forEach(
-      ([key, mode]) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'mode-card' + (key === this.currentMode ? ' active' : '');
-        btn.dataset.mode = key;
-        btn.innerHTML = `<span class="mode-num">${mode.num}</span><strong>${mode.label}</strong><span>${mode.short}</span>`;
-        btn.addEventListener('click', () => {
-          this.currentMode = key;
-          this.applyModeUI();
-        });
-        wrap.appendChild(btn);
-      },
-    );
-  }
-
-  private applyModeUI(): void {
-    const mode = GAME_MODES[this.currentMode];
-    this.renderModeCards();
-    el<HTMLDivElement>('mode-copy').textContent = mode.intro;
-    el<HTMLDivElement>('mode-badge').textContent = mode.label;
   }
 
   private updateRoundUI(): void {
@@ -157,7 +189,7 @@ export class WorldGuesserApp {
     btn.disabled = !enabled;
   }
 
-  private resetClassicRoundState(): void {
+  private resetRoundState(): void {
     this.classicStep = 1;
     this.step1Done = false;
     this.step2Done = false;
@@ -167,13 +199,32 @@ export class WorldGuesserApp {
     this.clearPhotoPickState();
     el<HTMLDivElement>('step1-feedback').hidden = true;
     el<HTMLDivElement>('step2-feedback').hidden = true;
+    el<HTMLDivElement>('photo-role-reminder').hidden = true;
     el<HTMLInputElement>('gap-slider').value = '5';
     el<HTMLSpanElement>('gap-display').textContent = '5';
   }
 
   private clearPhotoPickState(): void {
-    el<HTMLButtonElement>('photo-pick-a').classList.remove('picked', 'correct', 'wrong', 'revealed-newer');
-    el<HTMLButtonElement>('photo-pick-b').classList.remove('picked', 'correct', 'wrong', 'revealed-newer');
+    el<HTMLButtonElement>('photo-pick-a').classList.remove(
+      'picked',
+      'correct',
+      'wrong',
+      'revealed-newer',
+      'revealed-older',
+      'is-newer',
+      'is-older',
+    );
+    el<HTMLButtonElement>('photo-pick-b').classList.remove(
+      'picked',
+      'correct',
+      'wrong',
+      'revealed-newer',
+      'revealed-older',
+      'is-newer',
+      'is-older',
+    );
+    el<HTMLSpanElement>('badge-a').classList.remove('newer', 'older');
+    el<HTMLSpanElement>('badge-b').classList.remove('newer', 'older');
     el<HTMLSpanElement>('badge-a').textContent = '';
     el<HTMLSpanElement>('badge-b').textContent = '';
     el<HTMLButtonElement>('photo-pick-a').disabled = false;
@@ -195,27 +246,13 @@ export class WorldGuesserApp {
     if (step === 1) this.setActionButton('Tap a photo above', false);
     else if (step === 2 && !this.step2Done) this.setActionButton('Check my guess', true);
     else if (step === 2 && this.step2Done) this.setActionButton('Continue to map', true);
-    else if (step === 3) this.setActionButton('Lock in location', this.pendingGuessLat !== null);
-
-    if (step === 3) {
-      setTimeout(() => {
-        this.initGuessMap('guess-map');
-      }, 80);
+    else if (step === 3) {
+      this.applyPhotoRoleLabels();
+      this.setActionButton('Lock in newer photo location', this.pendingGuessLat !== null);
+      setTimeout(() => this.initGuessMap(), 80);
+    } else if (this.step1Done) {
+      this.applyPhotoRoleLabels();
     }
-  }
-
-  private showClassicLayout(): void {
-    el<HTMLDivElement>('classic-flow').style.display = '';
-    el<HTMLDivElement>('geo-flow').style.display = 'none';
-    el<HTMLDivElement>('single-image-wrap').style.display = 'none';
-    el<HTMLDivElement>('dual-image-wrap').style.display = 'none';
-  }
-
-  private showGeoLayout(): void {
-    el<HTMLDivElement>('classic-flow').style.display = 'none';
-    el<HTMLDivElement>('geo-flow').style.display = '';
-    el<HTMLDivElement>('dual-image-wrap').style.display = 'none';
-    el<HTMLDivElement>('single-image-wrap').style.display = 'none';
   }
 
   private async mapillaryGet(url: string): Promise<MapillaryResponse | null> {
@@ -315,130 +352,59 @@ export class WorldGuesserApp {
     return null;
   }
 
-  private async fetchGeoImage(lat: number, lng: number): Promise<Omit<StreetImage, 'region'> | null> {
-    const spread = 0.15 + Math.random() * 0.25;
-    const aLat = lat + (Math.random() - 0.5) * spread;
-    const aLng = lng + (Math.random() - 0.5) * spread;
-    const url = `https://graph.mapillary.com/images?access_token=${encodeURIComponent(this.accessToken)}&fields=${IMAGE_FIELDS}&lat=${aLat}&lng=${aLng}&radius=50&limit=12`;
-    const json = await this.mapillaryGet(url);
-    if (!json) return null;
-    const rows = (json.data ?? []).filter((img) => img.geometry?.coordinates && thumbUrl(img));
-    if (!rows.length) return null;
-    const pool = rows.filter((r) => !r.is_pano).length ? rows.filter((r) => !r.is_pano) : rows;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
-    const [realLng, realLat] = pick.geometry!.coordinates;
-    return {
-      lat: realLat,
-      lng: realLng,
-      year: pick.captured_at ? imageYear(pick.captured_at) : null,
-      thumbUrl: thumbUrl(pick)!,
-      isPano: Boolean(pick.is_pano),
-    };
-  }
-
   private async loadRoundImage(): Promise<void> {
-    const singleImg = el<HTMLImageElement>('street-image');
     const imgA = el<HTMLImageElement>('street-image-a');
     const imgB = el<HTMLImageElement>('street-image-b');
-    const singleWrap = el<HTMLDivElement>('single-image-wrap');
     const dualWrap = el<HTMLDivElement>('dual-image-wrap');
     const loading = el<HTMLDivElement>('image-loading');
-    const bar = el<HTMLDivElement>('image-hint-bar');
 
-    singleImg.style.display = 'none';
     imgA.style.display = 'none';
     imgB.style.display = 'none';
-    singleWrap.style.display = 'none';
     dualWrap.style.display = 'none';
-    bar.style.display = 'none';
     loading.style.display = 'grid';
     loading.innerHTML =
       '<div><div class="spinner"></div><div>Loading a place from the commons…</div></div>';
-    this.currentImage = null;
     this.currentPair = null;
+    this.resetRoundState();
+    this.setClassicStep(1);
 
-    if (this.isClassic()) {
-      this.showClassicLayout();
-      this.resetClassicRoundState();
-      this.setClassicStep(1);
-    } else {
-      this.showGeoLayout();
-      this.setActionButton('Lock in guess', false);
-    }
-
-    const seeds = shuffle(this.isClassic() ? CLASSIC_CITY_SEEDS : SEED_LOCATIONS);
-
-    for (const [lat, lng, region] of seeds) {
+    for (const [lat, lng, region] of shuffle(CLASSIC_CITY_SEEDS)) {
       try {
-        if (this.isClassic()) {
-          const pair = await this.fetchPair(lat, lng, region);
-          if (pair) {
-            this.currentPair = pair;
-            break;
-          }
-        } else {
-          const found = await this.fetchGeoImage(lat, lng);
-          if (found) {
-            this.currentImage = { ...found, region };
-            break;
-          }
+        const pair = await this.fetchPair(lat, lng, region);
+        if (pair) {
+          this.currentPair = pair;
+          break;
         }
       } catch (e) {
         console.warn(e);
       }
     }
 
-    if (this.isClassic()) {
-      if (!this.currentPair) {
-        loading.innerHTML = '<div>Could not find a photo pair. Check your token or refresh.</div>';
-        return;
-      }
-      el<HTMLDivElement>('hint-pano').style.display = 'none';
-      bar.style.display = 'none';
-
-      let loaded = 0;
-      const onReady = () => {
-        loaded += 1;
-        if (loaded < 2) return;
-        loading.style.display = 'none';
-        dualWrap.style.display = 'grid';
-        imgA.style.display = 'block';
-        imgB.style.display = 'block';
-        bar.style.display = 'none';
-      };
-      imgA.onload = onReady;
-      imgB.onload = onReady;
-      imgA.onerror = () => {
-        loading.innerHTML = '<div>Image failed to load.</div>';
-      };
-      imgB.onerror = imgA.onerror;
-      imgA.src = this.currentPair.imageA.thumbUrl;
-      imgB.src = this.currentPair.imageB.thumbUrl;
+    if (!this.currentPair) {
+      loading.innerHTML = '<div>Could not find a photo pair. Check your token or refresh.</div>';
       return;
     }
 
-    if (!this.currentImage) {
-      loading.innerHTML = '<div>Could not load an image. Check your token or refresh.</div>';
-      return;
-    }
-
-    el<HTMLDivElement>('hint-pano').style.display = this.currentImage.isPano ? 'inline-flex' : 'none';
-    bar.style.display = this.currentImage.isPano ? 'flex' : 'none';
-
-    singleImg.onload = () => {
+    let loaded = 0;
+    const onReady = () => {
+      loaded += 1;
+      if (loaded < 2) return;
       loading.style.display = 'none';
-      singleWrap.style.display = 'block';
-      singleImg.style.display = 'block';
-      bar.style.display = this.currentImage.isPano ? 'flex' : 'none';
-      this.setActionButton('Lock in guess', this.pendingGuessLat !== null);
+      dualWrap.style.display = 'grid';
+      imgA.style.display = 'block';
+      imgB.style.display = 'block';
     };
-    singleImg.onerror = () => {
+    imgA.onload = onReady;
+    imgB.onload = onReady;
+    imgA.onerror = () => {
       loading.innerHTML = '<div>Image failed to load.</div>';
     };
-    singleImg.src = this.currentImage.thumbUrl;
+    imgB.onerror = imgA.onerror;
+    imgA.src = this.currentPair.imageA.thumbUrl;
+    imgB.src = this.currentPair.imageB.thumbUrl;
   }
 
-  private initGuessMap(containerId: 'guess-map' | 'geo-map'): void {
+  private initGuessMap(): void {
     if (this.guessMap) {
       this.guessMap.remove();
       this.guessMap = null;
@@ -446,11 +412,10 @@ export class WorldGuesserApp {
     this.pendingGuessLat = null;
     this.pendingGuessLng = null;
     this.guessMarker = null;
+    el<HTMLDivElement>('map-instruction').textContent =
+      'Drop your pin where the newer photo (green badge) was taken.';
 
-    const instructionId = containerId === 'guess-map' ? 'map-instruction' : 'geo-map-instruction';
-    el<HTMLDivElement>(instructionId).textContent = 'Click the map to place your pin.';
-
-    this.guessMap = L.map(containerId, {
+    this.guessMap = L.map('guess-map', {
       center: [20, 0],
       zoom: 1.6,
       zoomControl: true,
@@ -475,12 +440,10 @@ export class WorldGuesserApp {
       this.guessMarker = L.marker([this.pendingGuessLat, this.pendingGuessLng], { icon }).addTo(
         this.guessMap!,
       );
-      el<HTMLDivElement>(instructionId).textContent =
+      el<HTMLDivElement>('map-instruction').textContent =
         `Pinned at ${this.pendingGuessLat.toFixed(3)}°, ${this.pendingGuessLng.toFixed(3)}°`;
-      if (this.isClassic() && this.classicStep === 3) {
-        this.setActionButton('Lock in location', true);
-      } else if (!this.isClassic()) {
-        this.setActionButton('Lock in guess', true);
+      if (this.classicStep === 3) {
+        this.setActionButton('Lock in newer photo location', true);
       }
     });
 
@@ -488,29 +451,27 @@ export class WorldGuesserApp {
   }
 
   private onPhotoPick(slot: PhotoSlot): void {
-    if (!this.isClassic() || this.classicStep !== 1 || this.step1Done || !this.currentPair) return;
+    if (this.classicStep !== 1 || this.step1Done || !this.currentPair) return;
 
     const correct = slot === this.newerSlot();
     this.newerCorrect = correct;
     this.step1Done = true;
 
     const pickEl = el<HTMLButtonElement>(`photo-pick-${slot.toLowerCase()}`);
-    const newerEl = el<HTMLButtonElement>(
-      `photo-pick-${this.newerSlot().toLowerCase()}`,
-    );
+    const newerEl = el<HTMLButtonElement>(`photo-pick-${this.newerSlot().toLowerCase()}`);
 
     pickEl.classList.add('picked', correct ? 'correct' : 'wrong');
     newerEl.classList.add('revealed-newer');
-    el<HTMLSpanElement>(`badge-${this.newerSlot().toLowerCase()}`).textContent = 'Newer';
     el<HTMLButtonElement>('photo-pick-a').disabled = true;
     el<HTMLButtonElement>('photo-pick-b').disabled = true;
+    this.applyPhotoRoleLabels();
 
     const fb = el<HTMLDivElement>('step1-feedback');
     fb.hidden = false;
     fb.className = 'step-feedback ' + (correct ? 'success' : 'fail');
     fb.innerHTML = correct
-      ? `<strong>Correct!</strong> Photo ${slot} is the newer capture.`
-      : `<strong>Not quite.</strong> Photo ${this.newerSlot()} is newer — Photo ${slot} is further back.`;
+      ? `<strong>Correct!</strong> Photo ${slot} is the newer one. Labels are on the photos — keep them in mind.`
+      : `<strong>Not quite.</strong> Photo ${this.newerSlot()} is newer, Photo ${this.olderSlot()} is older. Check the badges above.`;
 
     this.setActionButton('Continue', true);
   }
@@ -532,35 +493,32 @@ export class WorldGuesserApp {
     if (this.gapDiff === 0) {
       fb.innerHTML = `<strong>Spot on!</strong> ${this.currentPair.actualGap} years apart (${older} → ${newer}).`;
     } else if (this.gapDiff <= 2) {
-      fb.innerHTML = `<strong>Close.</strong> You said ${this.guessedGap} yr — actual gap is ${this.currentPair.actualGap} yr (${this.gapDiff} yr off).`;
+      fb.innerHTML = `<strong>Close.</strong> You said ${this.guessedGap} yr — actual gap is ${this.currentPair.actualGap} yr (${this.gapDiff} yr off, ${older} → ${newer}).`;
     } else {
       fb.innerHTML = `<strong>Off by ${this.gapDiff} years.</strong> You said ${this.guessedGap} yr — actual gap is ${this.currentPair.actualGap} yr (${older} → ${newer}).`;
     }
 
     el<HTMLInputElement>('gap-slider').disabled = true;
+    this.applyPhotoRoleLabels();
     this.setActionButton('Continue to map', true);
   }
 
   private async onActionButton(): Promise<void> {
-    if (this.isClassic()) {
-      if (this.classicStep === 1 && this.step1Done) {
-        this.setClassicStep(2);
-        return;
-      }
-      if (this.classicStep === 2 && !this.step2Done) {
-        this.checkGapGuess();
-        return;
-      }
-      if (this.classicStep === 2 && this.step2Done) {
-        this.setClassicStep(3);
-        return;
-      }
-      if (this.classicStep === 3) {
-        await this.submitClassicRound();
-      }
+    if (this.classicStep === 1 && this.step1Done) {
+      this.setClassicStep(2);
       return;
     }
-    await this.submitGeoRound();
+    if (this.classicStep === 2 && !this.step2Done) {
+      this.checkGapGuess();
+      return;
+    }
+    if (this.classicStep === 2 && this.step2Done) {
+      this.setClassicStep(3);
+      return;
+    }
+    if (this.classicStep === 3) {
+      await this.submitRound();
+    }
   }
 
   private destroyResultMap(): void {
@@ -622,21 +580,9 @@ export class WorldGuesserApp {
     setTimeout(() => this.resultMap?.invalidateSize(), 100);
   }
 
-  private showResult(
-    roundScore: number,
-    title: string,
-    tier: 'excellent' | 'close' | 'far',
-    opts: {
-      showMap: boolean;
-      mapLat?: number;
-      mapLng?: number;
-      breakdown?: string;
-      midLabel: string;
-      midValue: string;
-      midDetail?: string;
-      distValue?: string;
-    },
-  ): void {
+  private showResult(roundScore: number, tier: 'excellent' | 'close' | 'far'): void {
+    if (!this.currentPair) return;
+
     const icon = el<HTMLDivElement>('result-avatar-wrap');
     const badge = el<HTMLDivElement>('result-score-badge');
 
@@ -644,23 +590,32 @@ export class WorldGuesserApp {
     badge.style.color =
       tier === 'excellent' ? 'var(--primary)' : tier === 'close' ? 'var(--amber)' : '#efb39a';
     badge.textContent = `+${roundScore.toLocaleString()}`;
-    el<HTMLDivElement>('result-title').textContent = title;
+    el<HTMLDivElement>('result-title').textContent = 'Round complete — time and place read.';
 
-    const breakdown = el<HTMLDivElement>('result-breakdown');
-    if (opts.breakdown) {
-      breakdown.hidden = false;
-      breakdown.innerHTML = opts.breakdown;
-    } else {
-      breakdown.hidden = true;
-    }
+    const newerScore = this.newerCorrect ? CLASSIC_NEWER_POINTS : 0;
+    const gapScore = scoreFromGap(this.gapDiff);
+    const distKm = haversineKm(
+      this.pendingGuessLat!,
+      this.pendingGuessLng!,
+      this.currentPair.newerLat,
+      this.currentPair.newerLng,
+    );
+    const locScore = scoreFromDistance(distKm);
+    const years = [this.currentPair.imageA.year, this.currentPair.imageB.year];
 
-    el<HTMLDivElement>('result-map-wrap').style.display = opts.showMap ? '' : 'none';
-    el<HTMLDivElement>('stat-distance-wrap').style.display = opts.distValue ? '' : 'none';
-    if (opts.distValue) el<HTMLElement>('stat-distance').textContent = opts.distValue;
+    el<HTMLDivElement>('result-breakdown').hidden = false;
+    el<HTMLDivElement>('result-breakdown').innerHTML = `
+      <div class="breakdown-row ${this.newerCorrect ? 'ok' : 'miss'}"><span>Newer photo</span><strong>${this.newerCorrect ? 'Correct' : 'Wrong'} (+${newerScore})</strong></div>
+      <div class="breakdown-row ${this.gapDiff === 0 ? 'ok' : this.gapDiff <= 2 ? 'mid' : 'miss'}"><span>Year gap</span><strong>${this.gapDiff} yr off (+${gapScore})</strong></div>
+      <div class="breakdown-row ${distKm < 50 ? 'ok' : distKm < 500 ? 'mid' : 'miss'}"><span>Location</span><strong>${formatMiles(distKm)} away (+${locScore})</strong></div>
+    `;
 
-    el<HTMLElement>('stat-mid-label').textContent = opts.midLabel;
-    el<HTMLElement>('stat-mid').textContent = opts.midValue;
-    el<HTMLDivElement>('stat-mid-detail').textContent = opts.midDetail ?? '';
+    el<HTMLDivElement>('result-map-wrap').style.display = '';
+    el<HTMLDivElement>('stat-distance-wrap').style.display = '';
+    el<HTMLElement>('stat-distance').textContent = formatMiles(distKm);
+    el<HTMLElement>('stat-mid-label').textContent = 'Year gap';
+    el<HTMLElement>('stat-mid').textContent = `${this.currentPair.actualGap} yrs`;
+    el<HTMLDivElement>('stat-mid-detail').textContent = `${Math.min(...years)} → ${Math.max(...years)}`;
     el<HTMLElement>('stat-pts').textContent = roundScore.toLocaleString();
 
     el<HTMLButtonElement>('btn-next').textContent =
@@ -668,14 +623,10 @@ export class WorldGuesserApp {
 
     el<HTMLDivElement>('result-overlay').classList.add('visible');
     this.updateModalState();
-
-    if (opts.showMap && opts.mapLat != null && opts.mapLng != null) {
-      const lat = opts.mapLat;
-      const lng = opts.mapLng;
-      setTimeout(() => this.buildResultMap(lat, lng), 60);
-    } else {
-      this.destroyResultMap();
-    }
+    setTimeout(
+      () => this.buildResultMap(this.currentPair!.newerLat, this.currentPair!.newerLng),
+      60,
+    );
   }
 
   private closeResultOverlay(): void {
@@ -696,9 +647,7 @@ export class WorldGuesserApp {
       const row = document.createElement('div');
       row.className = 'summary-row';
       const level = round.score >= 700 ? 'high' : round.score >= 350 ? 'mid' : 'low';
-      const detail = this.isClassic()
-        ? `${round.newerCorrect ? 'Newer ✓' : 'Newer ✗'} · Gap off ${round.gapDiff} · ${formatMiles(round.distKm ?? 0)} away`
-        : `${formatMiles(round.distKm ?? 0)} away · Year off by ${round.yearDiff}`;
+      const detail = `${round.newerCorrect ? 'Newer ✓' : 'Newer ✗'} · Gap off ${round.gapDiff} · ${formatMiles(round.distKm)} away`;
       row.innerHTML = `<div><div>Round ${round.round}</div><div style="font-size:12px;color:var(--muted);margin-top:4px;">${detail}</div></div><span class="chip ${level}">+${round.score}</span>`;
       wrap.appendChild(row);
     });
@@ -714,11 +663,10 @@ export class WorldGuesserApp {
       return;
     }
     this.updateRoundUI();
-    if (!this.isClassic()) this.initGuessMap('geo-map');
     await this.loadRoundImage();
   }
 
-  private async submitClassicRound(): Promise<void> {
+  private async submitRound(): Promise<void> {
     if (!this.currentPair || this.pendingGuessLat === null || this.pendingGuessLng === null) return;
 
     const newerScore = this.newerCorrect ? CLASSIC_NEWER_POINTS : 0;
@@ -744,77 +692,17 @@ export class WorldGuesserApp {
     });
     el<HTMLDivElement>('total-score').textContent = this.totalScore.toLocaleString();
 
-    const years = [this.currentPair.imageA.year, this.currentPair.imageB.year];
-    const tier =
-      roundScore >= 1200 ? 'excellent' : roundScore >= 600 ? 'close' : ('far' as const);
-
-    this.showResult(roundScore, 'Round complete — time and place read.', tier, {
-      showMap: true,
-      mapLat: this.currentPair.newerLat,
-      mapLng: this.currentPair.newerLng,
-      breakdown: `
-        <div class="breakdown-row ${this.newerCorrect ? 'ok' : 'miss'}"><span>Newer photo</span><strong>${this.newerCorrect ? 'Correct' : 'Wrong'} (+${newerScore})</strong></div>
-        <div class="breakdown-row ${this.gapDiff === 0 ? 'ok' : this.gapDiff <= 2 ? 'mid' : 'miss'}"><span>Year gap</span><strong>${this.gapDiff} yr off (+${gapScore})</strong></div>
-        <div class="breakdown-row ${distKm < 50 ? 'ok' : distKm < 500 ? 'mid' : 'miss'}"><span>Location</span><strong>${formatMiles(distKm)} away (+${locScore})</strong></div>
-      `,
-      distValue: formatMiles(distKm),
-      midLabel: 'Year gap',
-      midValue: `${this.currentPair.actualGap} yrs`,
-      midDetail: `${Math.min(...years)} → ${Math.max(...years)}`,
-    });
-  }
-
-  private async submitGeoRound(): Promise<void> {
-    if (this.pendingGuessLat === null || this.pendingGuessLng === null || !this.currentImage) return;
-
-    const guessedYear = parseInt(el<HTMLInputElement>('year-slider').value, 10);
-    const distKm = haversineKm(
-      this.pendingGuessLat,
-      this.pendingGuessLng,
-      this.currentImage.lat,
-      this.currentImage.lng,
-    );
-    const distScore = scoreFromDistance(distKm);
-    const yearDiff = this.currentImage.year ? Math.abs(guessedYear - this.currentImage.year) : 10;
-    const yearScore = this.currentImage.year ? scoreFromYear(yearDiff) : 0;
-    const roundScore = distScore + yearScore;
-
-    this.totalScore += roundScore;
-    this.roundScores.push({
-      round: this.currentRound + 1,
-      score: roundScore,
-      distKm,
-      yearDiff,
-      guessedYear,
-    });
-    el<HTMLDivElement>('total-score').textContent = this.totalScore.toLocaleString();
-
-    const tier = roundScore >= 700 ? 'excellent' : roundScore >= 350 ? 'close' : 'far';
-    this.showResult(roundScore, 'Solid read on the street.', tier, {
-      showMap: true,
-      mapLat: this.currentImage.lat,
-      mapLng: this.currentImage.lng,
-      distValue: formatMiles(distKm),
-      midLabel: 'Year',
-      midValue: this.currentImage.year
-        ? `${yearDiff} yr${yearDiff === 1 ? '' : 's'} off`
-        : 'N/A',
-      midDetail: this.currentImage.year
-        ? `You: ${guessedYear}  ·  Actual: ${this.currentImage.year}`
-        : '',
-    });
+    const tier = roundScore >= 1200 ? 'excellent' : roundScore >= 600 ? 'close' : 'far';
+    this.showResult(roundScore, tier);
   }
 
   private async startGame(): Promise<void> {
-    this.applyModeUI();
     this.currentRound = 0;
     this.totalScore = 0;
-    this.currentImage = null;
     this.currentPair = null;
     this.roundScores = [];
     this.showScreen('screen-game');
     this.updateRoundUI();
-    if (!this.isClassic()) this.initGuessMap('geo-map');
     await this.loadRoundImage();
   }
 
@@ -826,6 +714,5 @@ export class WorldGuesserApp {
     }
     el<HTMLInputElement>('gap-slider').disabled = false;
     this.showScreen('screen-title');
-    this.applyModeUI();
   }
 }

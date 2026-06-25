@@ -1,14 +1,5 @@
-export type GameModeKey = 'classic' | 'geo';
-
 export type ClassicStep = 1 | 2 | 3;
 export type PhotoSlot = 'A' | 'B';
-
-export interface GameMode {
-  num: number;
-  label: string;
-  short: string;
-  intro: string;
-}
 
 export interface Role {
   min: number;
@@ -17,15 +8,6 @@ export interface Role {
 }
 
 export type SeedLocation = [lat: number, lng: number, region: string];
-
-export interface StreetImage {
-  lat: number;
-  lng: number;
-  year: number | null;
-  thumbUrl: string;
-  isPano: boolean;
-  region: string;
-}
 
 export interface TimeDriftImage {
   thumbUrl: string;
@@ -45,13 +27,11 @@ export interface TimeDriftPair {
 export interface RoundScore {
   round: number;
   score: number;
-  distKm?: number;
-  yearDiff?: number;
-  guessedYear?: number;
-  gapDiff?: number;
-  guessedGap?: number;
-  actualGap?: number;
-  newerCorrect?: boolean;
+  distKm: number;
+  gapDiff: number;
+  guessedGap: number;
+  actualGap: number;
+  newerCorrect: boolean;
 }
 
 export interface MapillaryImage {

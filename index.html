@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WorldGuesser — Solarpunk Field Guide</title>
+  <title>SolarLens — Solarpunk Field Guide</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Work+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -26,14 +26,12 @@
       </div>
       <div class="badge">Solarpunk Field Guide Game</div>
       <h1>Where in the <em>world</em> is this?</h1>
-      <p class="subcopy">A visual companion for solarpunk worlds — read streets as clues about care, mobility, and public life.</p>
+      <p class="subcopy">Two photos of the same city — one old, one new. Guess which is newer, how many years apart they were taken, then pin the newer photo on the map.</p>
       <div class="stats">
-        <div class="stat"><strong>5</strong><span>Rounds per game</span></div>
-        <div class="stat"><strong>2</strong><span>Game modes</span></div>
-        <div class="stat"><strong>3</strong><span>Steps in Classic</span></div>
+        <div class="stat"><strong>2</strong><span>Rounds per game</span></div>
+        <div class="stat"><strong>3</strong><span>Steps per round</span></div>
       </div>
-      <div id="mode-grid" class="mode-grid"></div>
-      <div id="mode-copy" class="mode-copy"></div>
+      <p id="mode-copy" class="mode-copy"></p>
       <button id="start-btn" class="btn btn-primary" type="button">Start game</button>
     </div>
   </section>
@@ -46,12 +44,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
           Quit
         </button>
-        <div class="brand">WorldGuesser</div>
+        <div class="brand">SolarLens</div>
       </div>
       <div class="round-ui">
         <div>
           <div id="mode-badge" class="mode-badge-small">Classic</div>
-          <div id="round-label" style="font-size:13px;color:var(--muted);margin-top:4px;">Round 1 / 5</div>
+          <div id="round-label" style="font-size:13px;color:var(--muted);margin-top:4px;">Round 1 / 2</div>
         </div>
         <div id="round-pips" class="pips"></div>
         <div id="total-score" class="score">0</div>
@@ -59,29 +57,23 @@
     </header>
     <div class="game-grid">
       <div class="image-panel">
-        <div id="single-image-wrap">
-          <img id="street-image" class="hero-image" alt="Street-level location to guess" />
-        </div>
         <div id="dual-image-wrap" class="dual-image-wrap">
           <button type="button" class="dual-slot photo-pick" id="photo-pick-a" data-slot="A">
             <img id="street-image-a" class="hero-image dual-image" alt="Photo A" />
-            <span class="dual-label">Photo A</span>
+            <span class="dual-label" id="label-a">Photo A</span>
             <span class="photo-badge" id="badge-a"></span>
           </button>
           <button type="button" class="dual-slot photo-pick" id="photo-pick-b" data-slot="B">
             <img id="street-image-b" class="hero-image dual-image" alt="Photo B" />
-            <span class="dual-label">Photo B</span>
+            <span class="dual-label" id="label-b">Photo B</span>
             <span class="photo-badge" id="badge-b"></span>
           </button>
         </div>
+        <div id="photo-role-reminder" class="photo-role-reminder" hidden></div>
         <div id="image-loading" class="loading"><div><div class="spinner"></div><div>Loading a place from the commons…</div></div></div>
-        <div id="image-hint-bar" class="image-bar">
-          <div id="hint-pano" class="pill" style="display:none;">360 panorama</div>
-        </div>
       </div>
       <aside class="side">
-        <!-- Classic 3-step flow -->
-        <div id="classic-flow" style="display:none;">
+        <div id="classic-flow">
           <div class="step-track" id="step-track">
             <div class="step-item active" data-step="1"><span class="step-num">1</span><span class="step-name">Newer</span></div>
             <div class="step-line"></div>
@@ -98,7 +90,7 @@
 
           <div id="classic-step-2" class="section classic-step-panel" hidden>
             <h2>How far back?</h2>
-            <p>The other photo is older. How many years further in the past?</p>
+            <p>Check the <strong>Older</strong> badge on the photos — how many years before the newer shot was it taken?</p>
             <div class="year-row">
               <span>Years back</span>
               <strong id="gap-display" class="year-value">5</strong>
@@ -109,26 +101,9 @@
 
           <div id="classic-step-3" class="section classic-step-panel" hidden>
             <h2>Pin the newer photo</h2>
-            <p>Where on the map was the newer shot taken?</p>
+            <p>Place your pin where the photo labeled <strong>Newer</strong> (green badge) was captured — not the older one.</p>
             <div id="guess-map"></div>
-            <div id="map-instruction" class="map-note">Click the map to place your pin.</div>
-          </div>
-        </div>
-
-        <!-- Geo mode flow -->
-        <div id="geo-flow">
-          <div class="section">
-            <h2 id="geo-title">Place your pin</h2>
-            <p id="geo-subtitle">Click anywhere on the map to lock in your best location guess.</p>
-            <div id="geo-map"></div>
-            <div id="geo-map-instruction" class="map-note">Click the map to place your pin.</div>
-          </div>
-          <div class="section">
-            <div class="year-row">
-              <span>Guess the year</span>
-              <strong id="year-display" class="year-value">2018</strong>
-            </div>
-            <input id="year-slider" type="range" min="2007" max="2026" value="2018" step="1" />
+            <div id="map-instruction" class="map-note">Click the map — you're locating the newer photo.</div>
           </div>
         </div>
 

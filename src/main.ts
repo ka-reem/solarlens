@@ -1,7 +1,7 @@
 import 'leaflet/dist/leaflet.css';
 import './style.css';
-import { WorldGuesserApp } from './app';
+import { SolarlensApp } from './app';
 
 document.addEventListener('DOMContentLoaded', () => {
-  new WorldGuesserApp().init();
+  new SolarlensApp().init();
 });
